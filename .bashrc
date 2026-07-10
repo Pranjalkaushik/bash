@@ -220,6 +220,13 @@ case "$TERM" in
     PROMPT_COMMAND="_statusbar${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
     trap '_statusbar' WINCH            # redraw + re-reserve on resize
     trap '_statusbar_off' EXIT
+    # Drop the reserved-row scroll region before running any command so
+    # full-screen programs (nvim, less, fzf) get the whole terminal. Without
+    # this the margin leaks into them and shifts the screen up by one row
+    # (e.g. nvim-tree highlights the line above the cursor). _statusbar
+    # re-reserves the row at the next prompt. DEBUG fires before each
+    # top-level command and, without `set -T`, never inside functions.
+    trap 'printf "\e7\e[r\e8" >/dev/tty 2>/dev/null' DEBUG
     # Ctrl-L clears the screen (and our region), so redraw after it.
     bind -x '"\C-l": clear; _statusbar' 2>/dev/null
     ;;
