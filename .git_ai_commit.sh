@@ -1,6 +1,7 @@
 # AI commit-message completion.
 # Type:  git commit -m "<TAB>
 # and an AI-generated  [AMG-<ticket>] <description>  message is inserted after the quote.
+# When the branch has no AMG-<ticket>, the [AMG-<ticket>] prefix is dropped entirely.
 # Anywhere else, Tab behaves as normal git completion.
 
 _ai_commit_message() {
@@ -24,17 +25,27 @@ _ai_commit_message() {
     diff=$(git diff --cached 2>/dev/null)
     [ -z "$diff" ] && diff=$(git diff 2>/dev/null)
 
-    prompt="provide a commit msg in following prompt : [${ticket:-AMG-<ticket id>}] <short description> -- the short description should be based on the changes i added -- the response should just be the commit msg
+    # With a ticket, ask for "[AMG-<id>] <description>"; without one, drop the
+    # bracketed prefix entirely and ask for just the description.
+    local format
+    if [ -n "$ticket" ]; then
+        format="[$ticket] <short description>"
+    else
+        format="<short description>"
+    fi
+    prompt="provide a commit msg in following prompt : $format -- the short description should be based on the changes i added -- the response should just be the commit msg
 
 Here is the git diff of my changes:
 $diff"
 
     msg=$(claude -p "$prompt" 2>/dev/null)
-    # The model may wrap the message in prose / code fences. Pull out just the
-    # "[ABC-123] ..." line (up to a backtick or end of line).
     local line
-    line=$(printf '%s\n' "$msg" | grep -oiE '\[[A-Z]+-[0-9]+\][^`]*' | head -n1)
-    # Fallback: if no ticket pattern found, use the whole output collapsed.
+    if [ -n "$ticket" ]; then
+        # The model may wrap the message in prose / code fences. Pull out just
+        # the "[ABC-123] ..." line (up to a backtick or end of line).
+        line=$(printf '%s\n' "$msg" | grep -oiE '\[[A-Z]+-[0-9]+\][^`]*' | head -n1)
+    fi
+    # Fallback (no ticket, or no ticket pattern found): use the whole output collapsed.
     [ -z "$line" ] && line=$(printf '%s' "$msg" | tr '\n' ' ')
     printf '%s' "$line" | sed 's/`//g; s/  */ /g; s/^ *//; s/ *$//'
 }
