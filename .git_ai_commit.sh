@@ -33,7 +33,15 @@ _ai_commit_message() {
     else
         format="<short description>"
     fi
-    prompt="provide a commit msg in following prompt : $format -- the short description should be based on the changes i added -- the response should just be the commit msg
+    prompt="Write a git commit message for the diff below.
+
+Output format: $format
+
+Rules:
+- Output ONLY the commit message itself, on a single line.
+- No preamble, no explanation, no quotes, no code fences, no trailing punctuation.
+- Do NOT write phrases like \"Here is the commit message\" or \"Based on the changes\".
+- The description must be based on the actual changes in the diff.
 
 Here is the git diff of my changes:
 $diff"
@@ -45,8 +53,15 @@ $diff"
         # the "[ABC-123] ..." line (up to a backtick or end of line).
         line=$(printf '%s\n' "$msg" | grep -oiE '\[[A-Z]+-[0-9]+\][^`]*' | head -n1)
     fi
-    # Fallback (no ticket, or no ticket pattern found): use the whole output collapsed.
-    [ -z "$line" ] && line=$(printf '%s' "$msg" | tr '\n' ' ')
+    # Fallback (no ticket, or no ticket pattern found): the model may still prepend
+    # a prose line like "Here is the commit message:". Drop code fences and blank
+    # lines, then take the last remaining line (the message itself).
+    if [ -z "$line" ]; then
+        line=$(printf '%s\n' "$msg" \
+            | grep -v '^[[:space:]]*```' \
+            | grep -v '^[[:space:]]*$' \
+            | tail -n1)
+    fi
     printf '%s' "$line" | sed 's/`//g; s/  */ /g; s/^ *//; s/ *$//'
 }
 
