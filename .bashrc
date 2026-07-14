@@ -120,7 +120,6 @@ fi
 
 export GPG_TTY=$(tty)
 export PATH="$PATH:/opt/nvim-linux-x86_64/bin"
-. "$HOME/.cargo/env"
 export PATH=$HOME/.npm-global/bin:$PATH
 alias py="python3"
 
@@ -169,6 +168,17 @@ _sb_add() {  # $1 count  $2 symbol  $3 truecolor "R;G;B"
     _sb_color+="\e[38;2;${3}m$2$1\e[0m"
 }
 
+# Ask the terminal where the cursor is (DSR \e[6n) and echo just the row.
+# Echoes nothing if the terminal doesn't answer within the timeout, so callers
+# fall back to their previous behaviour instead of hanging.
+_sb_cursor_row() {
+    local pos
+    printf '\e[6n' > /dev/tty
+    IFS= read -rsd R -t 0.2 pos < /dev/tty 2>/dev/null || return
+    pos=${pos#*[}                      # "\e[<row>;<col>" -> "<row>;<col>"
+    printf '%s' "${pos%%;*}"
+}
+
 _statusbar() {
     local branch rows cols line x y
     local staged=0 modified=0 untracked=0 conflict=0 tracked=0
@@ -196,6 +206,18 @@ _statusbar() {
     _sb_add "$modified"  '~' '214;178;122'   # amber  = modified (unstaged)
     _sb_add "$untracked" '?' '105;122;154'   # blue   = untracked
     _sb_add "$conflict"  '!' '204;102;92'    # red    = merge conflict
+
+    # If the last command's output scrolled the cursor onto the row we reserve
+    # for the status line (happens when output is taller than the screen), bash
+    # would draw the next prompt right over the branch. Scroll the screen up one
+    # line first so the prompt — and the cursor we restore below — stay inside
+    # the scroll region. The region is still full here (the DEBUG trap reset it
+    # before the command ran), so \n scrolls the whole screen as intended.
+    local cur_row
+    cur_row=$(_sb_cursor_row)
+    if [ -n "$cur_row" ] && [ "$cur_row" -ge "$rows" ]; then
+        printf '\n\e[1A'               # scroll up one; cursor -> second-to-last row
+    fi
 
     printf '\e7'                       # save cursor
     printf '\e[1;%dr' "$((rows - 1))"  # (re)reserve the bottom row
